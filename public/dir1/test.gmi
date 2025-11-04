@@ -1,0 +1,5 @@
+# Test Static Page
+
+This is a static Gemini page served from the filesystem.
+
+=> index.gmi Back
