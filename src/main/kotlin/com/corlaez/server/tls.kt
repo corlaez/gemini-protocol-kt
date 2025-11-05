@@ -12,9 +12,12 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.openssl.PEMParser
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
 import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo
+import org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder
+import java.io.FileInputStream
 import java.io.FileReader
 import java.math.BigInteger
 import java.security.*
+import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -87,7 +90,7 @@ internal fun createSSLContextFromKeyStore(keyStore: KeyStore): SSLContext {
 }
 
 /** Generate a self-signed certificate for local testing */
-internal fun selfSignedCertificate(hostname: String): KeyStore {
+internal fun generatedSelfSignedCertificate(hostname: String): KeyStore {
     val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
     keyPairGenerator.initialize(2048)
     val keyPair = keyPairGenerator.generateKeyPair()
@@ -147,5 +150,68 @@ internal fun letsEncryptCertificate(keyPath: String, fullchainPath: String): Key
         CharArray(0),
         fullchain.toTypedArray()
     )
+    return keyStore
+}
+
+public fun fileSelfSignedCertificate(certPemPath: String, privateKeyPath: String, privateKeyPassword: CharArray): KeyStore {
+    // Load Key Pair (Private Key)
+    val keyPair =  try {
+        val parser = PEMParser(FileReader(privateKeyPath))
+        val pemObject = parser.readObject()
+        val converter = JcaPEMKeyConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME)
+
+        when (pemObject) {
+            is PEMKeyPair -> {
+                // Unencrypted private key
+                converter.getKeyPair(pemObject)
+            }
+            is org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo -> {
+                // Encrypted private key - need password to decrypt
+                val decryptorBuilder = JcePKCSPBEInputDecryptorProviderBuilder()
+                    .setProvider(BouncyCastleProvider.PROVIDER_NAME)
+                val inputDecryptorProvider = decryptorBuilder.build(privateKeyPassword)
+                val privateKeyInfo = pemObject.decryptPrivateKeyInfo(inputDecryptorProvider)
+                val privateKey = converter.getPrivateKey(privateKeyInfo)
+                java.security.KeyPair(null, privateKey) // We only need the private key
+            }
+            is org.bouncycastle.asn1.pkcs.PrivateKeyInfo -> {
+                // PKCS8 unencrypted format
+                val privateKey = converter.getPrivateKey(pemObject)
+                java.security.KeyPair(null, privateKey)
+            }
+            else -> {
+                throw IllegalArgumentException("PEM file does not contain a valid private key entry. Found: ${pemObject?.javaClass?.simpleName}")
+            }
+        }
+    } catch (e: Exception) {
+        println("Failed to load private key from $privateKeyPath (${e.message}).")
+        throw e
+    }
+
+    // Load Certificate Chain
+    val certificate = try {
+        val certFactory = CertificateFactory.getInstance("X.509", BouncyCastleProvider.PROVIDER_NAME)
+        // Use fullchain.pem for the server certificate and its intermediates
+        FileInputStream(certPemPath).use { inputstream ->
+            certFactory.generateCertificate(inputstream.buffered()) as X509Certificate
+        }
+    } catch (e: Exception) {
+        println("Failed to load certificate chain from $certPemPath (${e.message}).")
+        throw e
+    }
+
+    // Create an ephemeral Keystore in memory
+    // Note: The password here is purely temporary, only for creating the in-memory keystore instance
+    val tempPassword = "temp_password_bc".toCharArray()
+    val keyStore = KeyStore.getInstance("PKCS12", BouncyCastleProvider.PROVIDER_NAME).apply {
+        load(null, tempPassword)
+        // Add the loaded key and certificate to the in-memory Keystore
+        setKeyEntry(
+            "pem_alias",
+            keyPair.private,
+            tempPassword, // Key password is the same as temp store password
+            arrayOf(certificate)
+        )
+    }
     return keyStore
 }

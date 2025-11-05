@@ -1,3 +1,6 @@
+!**/src/main/resources/gitignored
+!**/src/test/resources/gitignored
+
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar

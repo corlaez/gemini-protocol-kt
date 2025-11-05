@@ -7,14 +7,14 @@ import com.corlaez.server.TLSServer
  * Handles TLS connections and delegates protocol handling
  */
 public class GeminiServer(
-    private val host: String = "0.0.0.0",
+    private val certificateConfig: CertificateConfig,
     private val port: Int = 1965,
-    private val certificateConfig: CertificateConfig
+    private val host: String = "0.0.0.0",
 ) {
     private val protocolHandler = GeminiProtocolHandler()
     private var server: TLSServer? = null
 
-    public fun start(geminiHandler: suspend (GeminiRequest) -> GeminiResponse) {
+    public fun start(geminiHandler: suspend (GeminiRequest) -> GeminiResponse): GeminiServer {
         if (server == null) {
             server = TLSServer(host, port, certificateConfig)
         }
@@ -41,6 +41,7 @@ public class GeminiServer(
                 protocolHandler.writeResponse(output, response)
             }
         }
+        return this
     }
 
     public suspend fun awaitTermination() {

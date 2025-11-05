@@ -15,8 +15,8 @@ dependencies {
     // Ktor Network for TLS (includes coroutines)
     implementation("io.ktor:ktor-network-tls:3.3.1")
     // Bouncy Castle for self-signed certificate generation
-    implementation("org.bouncycastle:bcprov-jdk18on:1.82")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.82")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.82")// Core provider (crypto algos, key gen, encrypt/decrypt)
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.82")// Certificate handling, PEM and PKCS utilities
     // Test
     testImplementation(kotlin("test"))
 }

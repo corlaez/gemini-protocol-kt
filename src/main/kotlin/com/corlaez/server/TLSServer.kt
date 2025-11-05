@@ -19,7 +19,7 @@ internal class TLSServer(
     private val certificateConfig: CertificateConfig
 ) {
     private val isRunning = AtomicBoolean(false)
-    private var scope = CoroutineScope(EmptyCoroutineContext)
+    private var scope = CoroutineScope(EmptyCoroutineContext)// Placeholder to avoid null checks
     private var serverJob: Job? = null
     private var serverSocket: SSLServerSocket? = null
 
@@ -30,7 +30,6 @@ internal class TLSServer(
             stop()
         } else {
             Runtime.getRuntime().addShutdownHook(Thread(::stop))
-            isRunning.set(true)
         }
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         // Create an SSL server socket using Java's built-in TLS
@@ -47,23 +46,24 @@ internal class TLSServer(
         serverSocket!!.needClientAuth = false
 
         println("Gemini server started on gemini://$host:$port")
-        println("TLS versions: ${serverSocket!!.enabledProtocols.joinToString(", ")}")
-        println("Cipher suites: ${serverSocket!!.enabledCipherSuites.size} enabled")
-        println("Cipher suites: ${serverSocket!!.enabledCipherSuites.joinToString(", ")} enabled")
+//        println("TLS versions: ${serverSocket!!.enabledProtocols.joinToString(", ")}")
+//        println("Cipher suites: ${serverSocket!!.enabledCipherSuites.size} enabled")
+//        println("Cipher suites: ${serverSocket!!.enabledCipherSuites.joinToString(", ")} enabled")
 
+        isRunning.set(true)
         serverJob = scope.launch {
             while (isActive) {
                 try {
-                    val socket = serverSocket!!.accept() as? SSLSocket ?: break
+                    val socket = serverSocket?.accept() as? SSLSocket ?: break
                     launch {
                         handleTLSConnection(socket, handler)
                     }
                 } catch (e: Exception) {
-                    if (isActive)
-                        println("Error accepting connection: ${e.message}")
+                    if (isRunning.get())
+                        println("Error accepting connection: ${e}")
                 }
             }
-            println("Server accept loop terminated")
+            println("Server stopped")
         }
     }
 
@@ -74,22 +74,22 @@ internal class TLSServer(
     /** Gracefully stop the server */
     fun stop() {
         if (!isRunning.get()) {
-            println("Server is not running")
             return
         }
 
-        println("Stopping Gemini server...")
         isRunning.set(false)
-
-        scope.cancel() // Cancel all coroutines
-        serverJob = null
         try {
             serverSocket?.close()
             serverSocket = null
         } catch (e: Exception) {
             println("Error closing server socket: ${e.message}")
         }
-        println("Server stopped")
+
+        scope.cancel() // Cancel all coroutines
+        serverJob = null
+        runBlocking {
+            awaitTermination()
+        }
     }
 
     /**
