@@ -1,5 +1,5 @@
-!**/src/main/resources/gitignored
-!**/src/test/resources/gitignored
+src/main/resources/gitignored
+src/test/resources/gitignored
 
 .gradle
 build/
