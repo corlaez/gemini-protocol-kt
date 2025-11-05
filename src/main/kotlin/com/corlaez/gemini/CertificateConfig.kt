@@ -1,9 +1,8 @@
 package com.corlaez.gemini
 
 import com.corlaez.server.createSSLContextFromKeyStore
-import com.corlaez.server.fileSelfSignedCertificate
-import com.corlaez.server.letsEncryptCertificate
 import com.corlaez.server.generatedSelfSignedCertificate
+import com.corlaez.server.loadKeyStoreFromFiles
 import java.security.KeyStore
 import javax.net.ssl.SSLContext
 
@@ -16,20 +15,20 @@ public sealed class CertificateConfig {
     }
 
     public class LetsEncrypt(
-        public val keyPath: String,
-        public val fullchainPath: String
+        public val privateKeyPath: String,
+        public val fullchainPath: String,
     ) : CertificateConfig() {
         public companion object {
             public fun fromDomain(domain: String): LetsEncrypt {
                 return LetsEncrypt(
-                    keyPath = "/etc/letsencrypt/live/$domain/privkey.pem",
-                    fullchainPath = "/etc/letsencrypt/live/$domain/fullchain.pem"
+                    fullchainPath = "/etc/letsencrypt/live/$domain/fullchain.pem",
+                    privateKeyPath = "/etc/letsencrypt/live/$domain/privkey.pem",
                 )
             }
         }
 
         override fun createKeyStore(): KeyStore {
-            return letsEncryptCertificate(keyPath, fullchainPath)
+            return loadKeyStoreFromFiles(privateKeyPath, fullchainPath, CharArray(0))
         }
     }
 
@@ -47,10 +46,10 @@ public sealed class CertificateConfig {
     public class FileSelfSigned(
         public val privateKeyPath: String,
         public val certPemPath: String,
-        public val privateKeyPassword: CharArray,
+        public val privateKeyPassword: CharArray = CharArray(0),
     ) : CertificateConfig() {
         override fun createKeyStore(): KeyStore {
-            return fileSelfSignedCertificate(certPemPath, privateKeyPath, privateKeyPassword)
+            return loadKeyStoreFromFiles(privateKeyPath, certPemPath, privateKeyPassword)
         }
     }
 }

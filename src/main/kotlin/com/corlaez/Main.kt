@@ -5,26 +5,46 @@ import com.corlaez.util.*
 import kotlinx.coroutines.runBlocking
 
 public fun main() {
-    val generatedSelfSignedConfig = CertificateConfig.GeneratedSelfSigned()
-    val server1 = GeminiServer(generatedSelfSignedConfig, 1965)
-        .start { GeminiResponse.Success(body = "# Hello world from server 1!") }
 
+    // Easiest to use, generated in memory. Recommended for local testing.
+    val certificateConfig = CertificateConfig.GeneratedSelfSigned()
+
+    // File-based self-signed (could be encrypted or unencrypted)
     val fileSelfSignedConfig = CertificateConfig.FileSelfSigned(
-        certPemPath = "./src/main/resources/gitignored/cert.pem",
         privateKeyPath = "./src/main/resources/gitignored/private.key",
+        certPemPath = "./src/main/resources/gitignored/cert.pem",
         privateKeyPassword = getEnvAsCharArray("PRIVATE_KEY_PASSWORD") ?: CharArray(0)
     )
-    val server2 = GeminiServer(fileSelfSignedConfig, 1966)
-        .start { GeminiResponse.Success(body = "# Hello world from server 2!") }
 
-    val letsEncryptConfig = CertificateConfig.LetsEncrypt.fromDomain("corlaez.com")
-    val server3 = GeminiServer(letsEncryptConfig, 1967)
-        .start { GeminiResponse.Success(body = "# Hello world from server 3!") }
+    // Let's encrypt (2 files, unencrypted)
+//    val letsEncryptConfig = CertificateConfig.LetsEncrypt.fromDomain("corlaez.com")
+
+
+
+
+    val server1 = GeminiServer(certificateConfig, 1965)
+        .start {  (url, remoteAddress) ->
+            GeminiResponse.Success(body = "# Hello world from server 1! Requesting $url from $remoteAddress")
+        }
+    val server2 = GeminiServer(certificateConfig, 1966)
+        .startWithRoutes {
+            get("/users/{id}") {
+
+                GeminiResponse.Success(body = "# Hello world from server 1! Requesting ${request.url} from $remoteAddress")
+            }
+        }
+
+
+//    val server2 = GeminiServer(fileSelfSignedConfig, 1966)
+//        .start { GeminiResponse.Success(body = "# Hello world from server 2!") }
+//
+//    val server3 = GeminiServer(letsEncryptConfig, 1967)
+//        .start { GeminiResponse.Success(body = "# Hello world from server 3!") }
 
     runBlocking {
         server1.awaitTermination()
-        server2.awaitTermination()
-        server3.awaitTermination()
+//        server2.awaitTermination()
+//        server3.awaitTermination()
     }
 }
 
