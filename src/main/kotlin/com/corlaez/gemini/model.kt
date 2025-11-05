@@ -11,7 +11,7 @@ import java.net.URI
 internal class GeminiProtocolHandler {
 
     /** Read a Gemini request from an input stream Returns null if the request is invalid */
-    fun readRequest(input: InputStream, remoteAddress: String): GeminiRequest? {
+    fun readRequest(input: InputStream, remoteAddress: String): Pair<GeminiRequest?, ProtocolError?> {
         val requestLineBytes = mutableListOf<Byte>()
         var byte: Int
         var foundCR = false
@@ -20,7 +20,7 @@ internal class GeminiProtocolHandler {
         while (true) {
             byte = input.read()
             if (byte == -1) {
-                return null // Connection closed
+                return null to ProtocolError.InvalidRequest// Connection closed
             }
 
             if (byte == '\r'.code) {
@@ -36,15 +36,15 @@ internal class GeminiProtocolHandler {
             }
 
             if (requestLineBytes.size > 1024) {
-                return null // URL too long
+                return null to ProtocolError.UrlTooLong // URL too long
             }
         }
 
         val requestLine = String(requestLineBytes.toByteArray(), Charsets.UTF_8)
 
         val geminiURI = GeminiURI(requestLine)
-        return if (geminiURI.uri == null) null
-            else GeminiRequest(url = geminiURI.uri, remoteAddress = remoteAddress)
+        return if (geminiURI.uri == null) null to ProtocolError.InvalidUrl
+            else GeminiRequest(url = geminiURI.uri, remoteAddress = remoteAddress) to null
     }
 
     /** Write a Gemini response to an output stream */
@@ -64,6 +64,7 @@ internal class GeminiProtocolHandler {
         return when (error) {
             is ProtocolError.UrlTooLong -> GeminiResponse.BadRequest("URL too long")
             is ProtocolError.InvalidUrl -> GeminiResponse.BadRequest("Invalid URL")
+            is ProtocolError.InvalidRequest -> GeminiResponse.BadRequest("Invalid request received")
             is ProtocolError.NoRequest -> GeminiResponse.BadRequest("No request received")
         }
     }
@@ -75,6 +76,7 @@ internal class GeminiProtocolHandler {
 internal sealed class ProtocolError {
     object UrlTooLong : ProtocolError()
     object InvalidUrl : ProtocolError()
+    object InvalidRequest : ProtocolError()
     object NoRequest : ProtocolError()
 }
 

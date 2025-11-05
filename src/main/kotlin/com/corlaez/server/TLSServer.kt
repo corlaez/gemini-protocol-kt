@@ -7,19 +7,16 @@ import java.io.OutputStream
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.*
-import kotlin.coroutines.EmptyCoroutineContext
 
-/**
- * Gemini TLS Server
- * Handles TLS connections and delegates protocol handling
- */
+/** A generic TLSServer using Java's SSLServerSocket and kotlin coroutines
+ * Supports only TLSv1.2 and TLSv1.3 because this server is intended to be a Gemini Server*/
 internal class TLSServer(
     private val host: String = "0.0.0.0",
     private val port: Int = 1965,
     private val certificateConfig: CertificateConfig
 ) {
     private val isRunning = AtomicBoolean(false)
-    private var scope = CoroutineScope(EmptyCoroutineContext)// Placeholder to avoid null checks
+    private var scope: CoroutineScope? = null
     private var serverJob: Job? = null
     private var serverSocket: SSLServerSocket? = null
 
@@ -51,7 +48,7 @@ internal class TLSServer(
 //        println("Cipher suites: ${serverSocket!!.enabledCipherSuites.joinToString(", ")} enabled")
 
         isRunning.set(true)
-        serverJob = scope.launch {
+        serverJob = scope?.launch {
             while (isActive) {
                 try {
                     val socket = serverSocket?.accept() as? SSLSocket ?: break
@@ -71,7 +68,6 @@ internal class TLSServer(
         serverJob?.join()
     }
 
-    /** Gracefully stop the server */
     fun stop() {
         if (!isRunning.get()) {
             return
@@ -85,16 +81,13 @@ internal class TLSServer(
             println("Error closing server socket: ${e.message}")
         }
 
-        scope.cancel() // Cancel all coroutines
+        scope?.cancel() // Cancel all coroutines
         serverJob = null
         runBlocking {
             awaitTermination()
         }
     }
 
-    /**
-     * Handle TLS connection - this is pure network/TLS logic
-     */
     private suspend fun handleTLSConnection(
         sslSocket: SSLSocket,
         handler: suspend (InputStream, String) -> (OutputStream) -> Unit
@@ -110,8 +103,10 @@ internal class TLSServer(
             val output = sslSocket.outputStream
 
             try {
-                // Delegate to protocol handler
-                handleGeminiProtocol(input, output, sslSocket.remoteSocketAddress.toString(), handler)
+                handler(input, sslSocket.remoteSocketAddress.toString()).invoke(output)
+            } catch (e: Exception) {
+                println("Error in secure server handler: ${e.message}")
+                e.printStackTrace()
             } finally {
                 // Graceful TLS shutdown
                 closeGracefully(sslSocket, input, output)
@@ -127,31 +122,7 @@ internal class TLSServer(
         }
     }
 
-    /**
-     * Handle Gemini protocol logic - delegated to protocol handler
-     */
-    private suspend fun handleGeminiProtocol(
-        input: InputStream,
-        output: OutputStream,
-        remoteAddress: String,
-        handler: suspend (InputStream, String) -> (OutputStream) -> Unit
-    ) {
-        try {
-            handler(input, remoteAddress).invoke(output)
-        } catch (e: Exception) {
-            println("Error in secure server handler: ${e.message}")
-            e.printStackTrace()
-        }
-    }
-
-    /**
-     * Gracefully close TLS connection
-     */
-    private fun closeGracefully(
-        sslSocket: SSLSocket,
-        input: InputStream,
-        output: OutputStream
-    ) {
+    private fun closeGracefully(sslSocket: SSLSocket, input: InputStream, output: OutputStream) {
         try {
             //("Shutting down output...")
             sslSocket.shutdownOutput()

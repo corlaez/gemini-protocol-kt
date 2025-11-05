@@ -11,13 +11,11 @@ import org.bouncycastle.openssl.PEMKeyPair
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import org.bouncycastle.openssl.PEMParser
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
+import org.bouncycastle.openssl.jcajce.JceOpenSSLPKCS8DecryptorProviderBuilder
 import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo
-import org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder
-import java.io.FileInputStream
 import java.io.FileReader
 import java.math.BigInteger
 import java.security.*
-import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -30,51 +28,7 @@ private val unit: Unit = run {
     Security.addProvider(BouncyCastleProvider())
 }
 
-/** Load PEM certificates from a file */
-internal fun loadPEMCertificates(certPath: String): List<X509Certificate> {
-    val certificates = mutableListOf<X509Certificate>()
-
-    PEMParser(FileReader(certPath)).use { parser ->
-        var obj = parser.readObject()
-        while (obj != null) {
-            when (obj) {
-                is X509Certificate -> certificates.add(obj)
-                is X509CertificateHolder -> {
-                    val cert = JcaX509CertificateConverter()
-                        .setProvider("BC")
-                        .getCertificate(obj)
-                    certificates.add(cert)
-                }
-            }
-            obj = parser.readObject()
-        }
-    }
-    return certificates
-}
-
-/** Load PEM private key from a file */
-internal fun loadPEMPrivateKey(keyPath: String): PrivateKey {
-    PEMParser(FileReader(keyPath)).use { parser ->
-        val obj = parser.readObject()
-        val converter = JcaPEMKeyConverter().setProvider("BC")
-
-        return when (obj) {
-            is PEMKeyPair -> {
-                converter.getKeyPair(obj).private
-            }
-            is PKCS8EncryptedPrivateKeyInfo -> {
-                // Handle encrypted key (requires password)
-                throw IllegalArgumentException("Encrypted private keys not supported yet")
-            }
-            is PrivateKeyInfo -> {
-                converter.getPrivateKey(obj)
-            }
-            else -> throw IllegalArgumentException("Unsupported key format")
-        }
-    }
-}
-
-/** Used by self-signed and let's encrypt certificates */
+/** Takes any KeyStore and creates an SSLContext for TLS 1.2 an 1.3 */
 internal fun createSSLContextFromKeyStore(keyStore: KeyStore): SSLContext {
     val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
     keyManagerFactory.init(keyStore, CharArray(0))
@@ -123,7 +77,7 @@ internal fun generatedSelfSignedCertificate(hostname: String): KeyStore {
     val keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
     keyStore.load(null, null)
     keyStore.setKeyEntry(
-        "gemini",
+        "generatedSelfSigned",
         keyPair.private,
         CharArray(0),
         arrayOf(certificate)
@@ -132,11 +86,37 @@ internal fun generatedSelfSignedCertificate(hostname: String): KeyStore {
     return keyStore
 }
 
+internal fun loadKeyStoreFromFiles(privateKeyPath: String, certPemPath: String, privateKeyPassword: CharArray): KeyStore {
+    // Load private key (with optional password)
+    val privateKey = loadPEMPrivateKey(
+        privateKeyPath,
+        password = if (privateKeyPassword.isEmpty()) null else privateKeyPassword
+    )
+
+    // Load certificate(s)
+    val certificates = loadPEMCertificates(certPemPath)
+
+    if (certificates.isEmpty()) {
+        throw IllegalArgumentException("No certificates found in file: $certPemPath")
+    }
+
+    // Create an ephemeral Keystore in memory
+    // Note: The password here is purely temporary, only for creating the in-memory keystore instance
+    val tempPassword = "temp_password_bc".toCharArray()
+    val keyStore = KeyStore.getInstance("PKCS12", BouncyCastleProvider.PROVIDER_NAME)
+    keyStore.load(null, tempPassword)
+    // Add the loaded key and certificate to the in-memory Keystore
+    keyStore.setKeyEntry(
+        "pemFileBased",
+        privateKey,
+        tempPassword, // Key password is the same as temp store password
+        certificates.toTypedArray()
+    )
+    return keyStore
+}
+
 /** Create a let's encrypt certificate for production */
 internal fun letsEncryptCertificate(keyPath: String, fullchainPath: String): KeyStore {
-    val keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
-    keyStore.load(null, null)
-
     val privateKey = loadPEMPrivateKey(keyPath)
     val fullchain = loadPEMCertificates(fullchainPath)// (certificate + intermediates)
 
@@ -144,8 +124,10 @@ internal fun letsEncryptCertificate(keyPath: String, fullchainPath: String): Key
         throw IllegalArgumentException("No certificates found in fullchain file: $fullchainPath")
     }
 
+    val keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
+    keyStore.load(null, null)
     keyStore.setKeyEntry(
-        "gemini",
+        "letsencrypt",
         privateKey,
         CharArray(0),
         fullchain.toTypedArray()
@@ -153,65 +135,57 @@ internal fun letsEncryptCertificate(keyPath: String, fullchainPath: String): Key
     return keyStore
 }
 
-public fun fileSelfSignedCertificate(certPemPath: String, privateKeyPath: String, privateKeyPassword: CharArray): KeyStore {
-    // Load Key Pair (Private Key)
-    val keyPair =  try {
-        val parser = PEMParser(FileReader(privateKeyPath))
-        val pemObject = parser.readObject()
-        val converter = JcaPEMKeyConverter().setProvider(BouncyCastleProvider.PROVIDER_NAME)
+/** Load PEM certificates from a file. Handles both single certificates and certificate chains */
+internal fun loadPEMCertificates(certPath: String): List<X509Certificate> {
+    val certificates = mutableListOf<X509Certificate>()
 
-        when (pemObject) {
+    PEMParser(FileReader(certPath)).use { parser ->
+        var obj = parser.readObject()
+        while (obj != null) {
+            when (obj) {
+                is X509Certificate -> certificates.add(obj)
+                is X509CertificateHolder -> {
+                    val cert = JcaX509CertificateConverter()
+                        .setProvider("BC")
+                        .getCertificate(obj)
+                    certificates.add(cert)
+                }
+            }
+            obj = parser.readObject()
+        }
+    }
+    return certificates
+}
+
+/** Load PEM private key from a file. Supports encrypted and unencrypted keys */
+internal fun loadPEMPrivateKey(keyPath: String, password: CharArray? = null): PrivateKey {
+    PEMParser(FileReader(keyPath)).use { parser ->
+        val obj = parser.readObject()
+        val converter = JcaPEMKeyConverter().setProvider("BC")
+
+        return when (obj) {
             is PEMKeyPair -> {
                 // Unencrypted private key
-                converter.getKeyPair(pemObject)
+                converter.getKeyPair(obj).private
             }
-            is org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo -> {
-                // Encrypted private key - need password to decrypt
-                val decryptorBuilder = JcePKCSPBEInputDecryptorProviderBuilder()
-                    .setProvider(BouncyCastleProvider.PROVIDER_NAME)
-                val inputDecryptorProvider = decryptorBuilder.build(privateKeyPassword)
-                val privateKeyInfo = pemObject.decryptPrivateKeyInfo(inputDecryptorProvider)
-                val privateKey = converter.getPrivateKey(privateKeyInfo)
-                java.security.KeyPair(null, privateKey) // We only need the private key
+            is PKCS8EncryptedPrivateKeyInfo -> {
+                if (password == null) {
+                    throw IllegalArgumentException(
+                        "Private key at $keyPath is encrypted but no password was provided"
+                    )
+                }
+                // JcePKCSPBEInputDecryptorProviderBuilder
+                val decryptorBuilder = JceOpenSSLPKCS8DecryptorProviderBuilder()
+                    .setProvider("BC")
+                val inputDecryptorProvider = decryptorBuilder.build(password)
+                val privateKeyInfo = obj.decryptPrivateKeyInfo(inputDecryptorProvider)
+                converter.getPrivateKey(privateKeyInfo)
             }
-            is org.bouncycastle.asn1.pkcs.PrivateKeyInfo -> {
+            is PrivateKeyInfo -> {
                 // PKCS8 unencrypted format
-                val privateKey = converter.getPrivateKey(pemObject)
-                java.security.KeyPair(null, privateKey)
+                converter.getPrivateKey(obj)
             }
-            else -> {
-                throw IllegalArgumentException("PEM file does not contain a valid private key entry. Found: ${pemObject?.javaClass?.simpleName}")
-            }
+            else -> throw IllegalArgumentException("Unsupported key format in $keyPath Found: ${obj?.javaClass?.simpleName}" )
         }
-    } catch (e: Exception) {
-        println("Failed to load private key from $privateKeyPath (${e.message}).")
-        throw e
     }
-
-    // Load Certificate Chain
-    val certificate = try {
-        val certFactory = CertificateFactory.getInstance("X.509", BouncyCastleProvider.PROVIDER_NAME)
-        // Use fullchain.pem for the server certificate and its intermediates
-        FileInputStream(certPemPath).use { inputstream ->
-            certFactory.generateCertificate(inputstream.buffered()) as X509Certificate
-        }
-    } catch (e: Exception) {
-        println("Failed to load certificate chain from $certPemPath (${e.message}).")
-        throw e
-    }
-
-    // Create an ephemeral Keystore in memory
-    // Note: The password here is purely temporary, only for creating the in-memory keystore instance
-    val tempPassword = "temp_password_bc".toCharArray()
-    val keyStore = KeyStore.getInstance("PKCS12", BouncyCastleProvider.PROVIDER_NAME).apply {
-        load(null, tempPassword)
-        // Add the loaded key and certificate to the in-memory Keystore
-        setKeyEntry(
-            "pem_alias",
-            keyPair.private,
-            tempPassword, // Key password is the same as temp store password
-            arrayOf(certificate)
-        )
-    }
-    return keyStore
 }

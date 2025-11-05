@@ -2,10 +2,7 @@ package com.corlaez.gemini
 
 import com.corlaez.server.TLSServer
 
-/**
- * Gemini TLS Server
- * Handles TLS connections and delegates protocol handling
- */
+/** Gemini Server is a composition of the generic TLSServer and GeminiProtocolHandler */
 public class GeminiServer(
     private val certificateConfig: CertificateConfig,
     private val port: Int = 1965,
@@ -14,15 +11,14 @@ public class GeminiServer(
     private val protocolHandler = GeminiProtocolHandler()
     private var server: TLSServer? = null
 
-    public fun start(geminiHandler: suspend (GeminiRequest) -> GeminiResponse): GeminiServer {
+    internal fun start(geminiHandler: suspend (GeminiRequest) -> GeminiResponse): GeminiServer {
         if (server == null) {
             server = TLSServer(host, port, certificateConfig)
         }
         server!!.start { input, remoteAddress ->
-            val request = protocolHandler.readRequest(input, remoteAddress)
+            val (request, error) = protocolHandler.readRequest(input, remoteAddress)
 
             val response = if (request != null) {
-                // Valid request - call application handler
                 try {
                     geminiHandler(request)
                 } catch (e: Exception) {
@@ -31,8 +27,7 @@ public class GeminiServer(
                     GeminiResponse.TemporaryFailure("Internal server error")
                 }
             } else {
-                // Invalid request - return error
-                protocolHandler.createErrorResponse(ProtocolError.InvalidUrl)
+                protocolHandler.createErrorResponse(error!!)
             }
 
             // Write response using protocol handler
@@ -48,7 +43,6 @@ public class GeminiServer(
         server?.awaitTermination()
     }
 
-    /** Gracefully stop the server */
     public fun stop() {
         server?.stop()
     }
