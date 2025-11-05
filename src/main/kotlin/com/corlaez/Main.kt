@@ -3,7 +3,6 @@ package com.corlaez
 import com.corlaez.gemini.*
 import com.corlaez.util.*
 import kotlinx.coroutines.runBlocking
-import java.util.LinkedList
 
 public fun main() {
     val generatedSelfSignedConfig = CertificateConfig.GeneratedSelfSigned()
@@ -13,8 +12,7 @@ public fun main() {
     val fileSelfSignedConfig = CertificateConfig.FileSelfSigned(
         certPemPath = "./src/main/resources/gitignored/cert.pem",
         privateKeyPath = "./src/main/resources/gitignored/private.key",
-        privateKeyPassword = getEnvAsCharArray("PRIVATE_KEY_PASSWORD")
-            ?: CharArray(0)
+        privateKeyPassword = getEnvAsCharArray("PRIVATE_KEY_PASSWORD") ?: CharArray(0)
     )
     val server2 = GeminiServer(fileSelfSignedConfig, 1966)
         .start { GeminiResponse.Success(body = "# Hello world from server 2!") }
