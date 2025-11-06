@@ -1,6 +1,6 @@
-# Ktor Gemini
+# gemini-protocol-kt
 
-A Kotlin Gemini server based on ktor-network.
+A Kotlin Gemini server
 
 ## Features
 

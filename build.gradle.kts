@@ -38,7 +38,7 @@ java {// for jitpack (not mandatory but recommended)
 }
 publishing {// for jitpack
     publications {
-        create<MavenPublication>("ktor-gemini") {
+        create<MavenPublication>("gemini-protocol-kt") {
             // Uses the artifacts defined by the 'java' or 'kotlin-jvm' component
             from(components["kotlin"])
         }
