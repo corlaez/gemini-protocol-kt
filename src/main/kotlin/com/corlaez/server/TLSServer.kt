@@ -128,6 +128,7 @@ internal class TLSServer(
             sslSocket.shutdownOutput()
             //("Waiting for client to close...")
             val buffer = ByteArray(1024)
+            @Suppress("ControlFlowWithEmptyBody")
             while (input.read(buffer) != -1) {}
             println("Client closed connection gracefully")
         } catch (e: Exception) {

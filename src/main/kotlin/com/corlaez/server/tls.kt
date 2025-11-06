@@ -115,26 +115,6 @@ internal fun loadKeyStoreFromFiles(privateKeyPath: String, certPemPath: String, 
     return keyStore
 }
 
-/** Create a let's encrypt certificate for production */
-internal fun letsEncryptCertificate(keyPath: String, fullchainPath: String): KeyStore {
-    val privateKey = loadPEMPrivateKey(keyPath)
-    val fullchain = loadPEMCertificates(fullchainPath)// (certificate + intermediates)
-
-    if (fullchain.isEmpty()) {
-        throw IllegalArgumentException("No certificates found in fullchain file: $fullchainPath")
-    }
-
-    val keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
-    keyStore.load(null, null)
-    keyStore.setKeyEntry(
-        "letsencrypt",
-        privateKey,
-        CharArray(0),
-        fullchain.toTypedArray()
-    )
-    return keyStore
-}
-
 /** Load PEM certificates from a file. Handles both single certificates and certificate chains */
 internal fun loadPEMCertificates(certPath: String): List<X509Certificate> {
     val certificates = mutableListOf<X509Certificate>()

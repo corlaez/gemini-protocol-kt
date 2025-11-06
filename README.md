@@ -7,7 +7,7 @@ A Kotlin Gemini server based on ktor-network.
 * Easy routing config for dynamic responses and static file responses
 * TLS 1.2 and 1.3 support
 * Supports Let's Encrypt and generates self-signed certificates for dev/test
-* An almost complete Gemini client implementation (client certificates is not supported)
+* An almost complete Gemini client implementation (client certificates are not supported)
 * Early implementation, expect rough edges (issues/PRs welcome)
 
 ## Usage
@@ -18,7 +18,7 @@ Gemini requires TLS 1.2 or 1.3. This library supports 3 ways to easily configure
 
 Zero setup, great to test locally, but it's not recommended for production.
 ```kotlin
-    val certConfig = CertificateConfig.SelfSigned()
+    val certConfig = CertificateConfig.GeneratedSelfSigned()
     val server = GeminiServer("0.0.0.0", 1965, certConfig)
 ```
 
@@ -40,10 +40,10 @@ openssl req -new -x509 -sha256 -key private.key -out cert.pem -days 365
 Then, you can read the certificate and private key from files:
 
 ```kotlin
-    val certConfig = CertificateConfig.SelfSignedFromFile(
-        certPemPath = "./ssl/cert.pem",// replace with the location of your certificate
-        privateKeyPath = "./ssl/private.key",// replace with the location of your private key
-        privateKeyPassword = getEnvAsCharArray("PRIVATE_KEY_PASSWORD")!!
+    val certConfig = CertificateConfig.FileSelfSigned(
+        privateKeyPath = "./src/main/resources/gitignored/private.key",
+        certPemPath = "./src/main/resources/gitignored/cert.pem",
+        privateKeyPassword = getEnvAsCharArray("PRIVATE_KEY_PASSWORD") ?: CharArray(0)
     )
     val server = GeminiServer("0.0.0.0", 1965, certConfig)
 ```
@@ -58,10 +58,10 @@ This may need to be expanded, but at least for the Let's Encrypt I generated aro
 ```
 
 which can also be written as (in case you have a different path):
-```
+```kotlin
     val domain = "corlaez.com"
     val certConfig = CertificateConfig.LetsEncrypt(
-        keyPath = "/etc/letsencrypt/live/$domain/privkey.pem",
+        privateKeyPath = "/etc/letsencrypt/live/$domain/privkey.pem",
         fullchainPath = "/etc/letsencrypt/live/$domain/fullchain.pem"
     )
     val server = GeminiServer("0.0.0.0", 1965, certConfig)
