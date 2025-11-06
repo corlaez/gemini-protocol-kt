@@ -11,11 +11,11 @@ public class GeminiServer(
     private val protocolHandler = GeminiProtocolHandler()
     private var server: TLSServer? = null
 
-    internal fun start(geminiHandler: suspend (GeminiRequest) -> GeminiResponse) {
+    internal fun start(wait: Boolean, geminiHandler: suspend (GeminiRequest) -> GeminiResponse) {
         if (server == null) {
             server = TLSServer(host, port, certificateConfig)
         }
-        server!!.start { input, remoteAddress ->
+        server!!.start(wait) { input, remoteAddress ->
             val (request, error) = protocolHandler.readRequest(input, remoteAddress)
 
             val response = if (request != null) {

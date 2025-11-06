@@ -1,5 +1,7 @@
 src/main/resources/gitignored
 src/test/resources/gitignored
+src/main/kotlin/com/corlaez/Main.kt
+static
 
 .gradle
 build/

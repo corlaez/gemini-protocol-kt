@@ -5,6 +5,7 @@ import kotlinx.coroutines.*
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.*
 
@@ -20,7 +21,7 @@ internal class TLSServer(
     private var serverJob: Job? = null
     private var serverSocket: SSLServerSocket? = null
 
-    fun start(handler: suspend (InputStream, String) -> (OutputStream) -> Unit) {
+    fun start(wait: Boolean, handler: suspend (InputStream, String) -> (OutputStream) -> Unit) {
         // If already running, stop first
         if (isRunning.get()) {
             println("Server already running, stopping first...")
@@ -61,6 +62,14 @@ internal class TLSServer(
                 }
             }
             println("Server stopped")
+        }
+        if (wait) {
+            val job = serverJob ?: return// If job is null, just return
+            val latch = CountDownLatch(1)
+            job.invokeOnCompletion {
+                latch.countDown()
+            }
+            latch.await()
         }
     }
 
