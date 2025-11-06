@@ -81,20 +81,18 @@ internal class TLSServer(
         if (!isRunning.get()) {
             return
         }
-
         isRunning.set(false)
         try {
             serverSocket?.close()
-            serverSocket = null
         } catch (e: Exception) {
             println("Error closing server socket: ${e.message}")
         }
-
         scope?.cancel() // Cancel all coroutines
-        serverJob = null
         runBlocking {
-            awaitTermination()
+            awaitTermination()// relies on serverJob, therefore we do not null it yet
         }
+        serverJob = null
+        serverSocket = null
     }
 
     private suspend fun handleTLSConnection(
