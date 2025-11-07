@@ -73,10 +73,6 @@ internal class TLSServer(
         }
     }
 
-    suspend fun awaitTermination() {
-        serverJob?.join()
-    }
-
     fun stop() {
         if (!isRunning.get()) {
             return
@@ -88,8 +84,8 @@ internal class TLSServer(
             println("Error closing server socket: ${e.message}")
         }
         scope?.cancel() // Cancel all coroutines
-        runBlocking {
-            awaitTermination()// relies on serverJob, therefore we do not null it yet
+        runBlocking {// TODO: I am unsure if I should use runBlocking here or just exit stop directly
+            serverJob?.join()// relies on serverJob, therefore we do not null it yet
         }
         serverJob = null
         serverSocket = null
@@ -104,7 +100,7 @@ internal class TLSServer(
             sslSocket.enabledProtocols = arrayOf("TLSv1.2", "TLSv1.3")
             sslSocket.startHandshake()
 
-            println("Connection from ${sslSocket.remoteSocketAddress}, protocol: ${sslSocket.session.protocol}")
+            println("Connection from ${sslSocket.remoteSocketAddress}, protocol: ${sslSocket.session.protocol}, cipherSuite: ${sslSocket.session.cipherSuite}")
 
             val input = sslSocket.inputStream
             val output = sslSocket.outputStream

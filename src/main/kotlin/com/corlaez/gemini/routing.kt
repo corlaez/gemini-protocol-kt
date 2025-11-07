@@ -206,12 +206,3 @@ public class GeminiRouting {
         return notFoundHandler(context)
     }
 }
-
-/**
- * Extension for GeminiServer to start with routing
- */
-public fun GeminiServer.startWithRoutes(wait: Boolean = true, configureRouting: GeminiRouting.() -> Unit) {
-    val geminiRouting = GeminiRouting()
-    configureRouting(geminiRouting)
-    start(wait) { request -> geminiRouting.handle(request) }
-}
